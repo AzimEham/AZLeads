@@ -1,0 +1,231 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  admin
+  operator
+}
+
+enum LeadStatus {
+  pending
+  forwarded
+  approved
+  rejected
+  no_mapping
+  forward_failed
+}
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  passwordHash  String   @map("password_hash")
+  role          UserRole
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  // Relations
+  apiKeys ApiKey[]
+
+  @@map("users")
+}
+
+model Affiliate {
+  id          String    @id @default(uuid())
+  name        String
+  email       String
+  apiKeyHash  String    @map("api_key_hash")
+  ipWhitelist Json      @map("ip_whitelist") // Array of CIDR strings
+  active      Boolean   @default(true)
+  lastUsedAt  DateTime? @map("last_used_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  // Relations
+  trafficLogs  TrafficLog[]
+  leads        Lead[]
+  mappings     Mapping[]
+  commissions  Commission[]
+
+  @@map("affiliates")
+}
+
+model Advertiser {
+  id             String   @id @default(uuid())
+  name           String   @unique
+  endpointUrl    String   @map("endpoint_url")
+  endpointSecret String   @map("endpoint_secret")
+  platform       String
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  // Relations
+  offers         Offer[]
+  mappings       Mapping[]
+  fieldMappings  FieldMapping[]
+  leads          Lead[]
+  callbackLogs   CallbackLog[]
+  commissions    Commission[]
+
+  @@map("advertisers")
+}
+
+model Offer {
+  id            String   @id @default(uuid())
+  advertiserId  String   @map("advertiser_id")
+  name          String
+  payoutAmount  Decimal  @map("payout_amount") @db.Decimal(12, 2)
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  // Relations
+  advertiser   Advertiser @relation(fields: [advertiserId], references: [id], onDelete: Restrict)
+  mappings     Mapping[]
+  trafficLogs  TrafficLog[]
+  leads        Lead[]
+
+  @@map("offers")
+}
+
+model Mapping {
+  id           String   @id @default(uuid())
+  affiliateId  String   @map("affiliate_id")
+  offerId      String   @map("offer_id")
+  advertiserId String   @map("advertiser_id")
+  forwardUrl   String   @map("forward_url")
+  enabled      Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  // Relations
+  affiliate  Affiliate  @relation(fields: [affiliateId], references: [id], onDelete: Restrict)
+  offer      Offer      @relation(fields: [offerId], references: [id], onDelete: Restrict)
+  advertiser Advertiser @relation(fields: [advertiserId], references: [id], onDelete: Restrict)
+
+  @@map("mappings")
+}
+
+model FieldMapping {
+  id           String     @id @default(uuid())
+  advertiserId String     @map("advertiser_id")
+  sourceField  String     @map("source_field")
+  targetField  String     @map("target_field")
+  allowlist    Boolean    @default(true)
+  transform    Json?      // Optional transform specification
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  // Relations
+  advertiser Advertiser @relation(fields: [advertiserId], references: [id], onDelete: Restrict)
+
+  @@map("field_mappings")
+}
+
+model TrafficLog {
+  id          String   @id @default(uuid())
+  affiliateId String   @map("affiliate_id")
+  offerId     String?  @map("offer_id")
+  rawPayload  Json     @map("raw_payload")
+  ip          String   @db.Inet
+  ua          String
+  receivedAt  DateTime @default(now()) @map("received_at")
+
+  // Relations
+  affiliate Affiliate @relation(fields: [affiliateId], references: [id], onDelete: Restrict)
+  offer     Offer?    @relation(fields: [offerId], references: [id], onDelete: SetNull)
+  leads     Lead[]
+
+  @@map("traffic_logs")
+}
+
+model Lead {
+  id                String     @id @default(uuid())
+  trafficLogId      String     @map("traffic_log_id")
+  azTxId            String     @unique @map("az_tx_id")
+  affiliateId       String     @map("affiliate_id")
+  advertiserId      String?    @map("advertiser_id")
+  offerId           String?    @map("offer_id")
+  email             String?
+  phone             String?
+  firstName         String?    @map("first_name")
+  lastName          String?    @map("last_name")
+  country           String?
+  status            LeadStatus
+  advertiserStatus  String?    @map("advertiser_status")
+  ftdAt             DateTime?  @map("ftd_at")
+  advertiserResponse Json?     @map("advertiser_response")
+  payout            Decimal?   @db.Decimal(12, 2)
+  createdAt         DateTime   @default(now()) @map("created_at")
+  updatedAt         DateTime   @default(now()) @updatedAt @map("updated_at")
+
+  // Relations
+  trafficLog   TrafficLog   @relation(fields: [trafficLogId], references: [id], onDelete: Restrict)
+  affiliate    Affiliate    @relation(fields: [affiliateId], references: [id], onDelete: Restrict)
+  advertiser   Advertiser?  @relation(fields: [advertiserId], references: [id], onDelete: SetNull)
+  offer        Offer?       @relation(fields: [offerId], references: [id], onDelete: SetNull)
+  forwardLogs  ForwardLog[]
+  commissions  Commission[]
+
+  @@map("leads")
+}
+
+model Commission {
+  id           String   @id @default(uuid())
+  leadId       String?  @map("lead_id")
+  advertiserId String   @map("advertiser_id")
+  affiliateId  String   @map("affiliate_id")
+  amount       Decimal  @db.Decimal(12, 2)
+  description  String
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  // Relations
+  lead       Lead?      @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  advertiser Advertiser @relation(fields: [advertiserId], references: [id], onDelete: Restrict)
+  affiliate  Affiliate  @relation(fields: [affiliateId], references: [id], onDelete: Restrict)
+
+  @@map("commissions")
+}
+
+model ForwardLog {
+  id         String   @id @default(uuid())
+  leadId     String   @map("lead_id")
+  attemptNo  Int      @map("attempt_no")
+  request    Json
+  response   Json?
+  statusCode Int?     @map("status_code")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  // Relations
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Restrict)
+
+  @@map("forward_logs")
+}
+
+model CallbackLog {
+  id           String   @id @default(uuid())
+  advertiserId String   @map("advertiser_id")
+  azTxId       String   @map("az_tx_id")
+  payload      Json
+  signature    String?
+  statusCode   Int      @map("status_code")
+  receivedAt   DateTime @default(now()) @map("received_at")
+
+  // Relations
+  advertiser Advertiser @relation(fields: [advertiserId], references: [id], onDelete: Restrict)
+
+  @@map("callback_logs")
+}
+
+model ApiKey {
+  id          String    @id @default(uuid())
+  label       String
+  tokenHash   String    @map("token_hash")
+  scopes      String[]
+  ownerUserId String    @map("owner_user_id")
+  lastUsedAt  DateTime? @map("last_used_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  // Relations
+  owner User @relation(fields: [ownerUserId], references: [id], onDelete: Restrict)
+
+  @@map("api_keys")
+}
