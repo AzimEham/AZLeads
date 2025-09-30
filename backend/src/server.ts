@@ -5,13 +5,10 @@ import { createServer } from 'http';
 import { config } from './config/config';
 import { logger } from './lib/logger';
 import { setupDatabase } from './db/database';
-import { setupRedis } from './lib/redis';
-import { setupQueues } from './jobs/queue';
 import { setupRoutes } from './api/routes';
 import { errorHandler, notFoundHandler } from './api/middleware/error';
 import { requestLogger } from './api/middleware/logger';
 import { rateLimiter } from './api/middleware/rateLimit';
-import { setupSwagger } from './swagger/setup';
 import { metricsMiddleware, metricsRoute } from './lib/metrics';
 
 const app = express();
@@ -58,9 +55,6 @@ app.get('/health', (req, res) => {
 // Metrics endpoint
 app.get('/metrics', metricsRoute);
 
-// Setup Swagger documentation
-setupSwagger(app);
-
 // API routes
 app.use('/api', setupRoutes());
 
@@ -74,19 +68,10 @@ async function startServer() {
     await setupDatabase();
     logger.info('Database connected successfully');
 
-    // Initialize Redis
-    await setupRedis();
-    logger.info('Redis connected successfully');
-
-    // Setup job queues
-    await setupQueues();
-    logger.info('Job queues initialized');
-
     // Start server
     server.listen(config.port, () => {
       logger.info(`Server running on port ${config.port}`);
       logger.info(`Environment: ${config.nodeEnv}`);
-      logger.info(`API Documentation: http://localhost:${config.port}/docs`);
     });
 
   } catch (error) {

@@ -1,14 +1,12 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { v4 as uuidv4 } from 'uuid';
 import shortUuid from 'short-uuid';
 import { getDatabase } from '../../db/database';
-import { RedisHelper } from '../../lib/redis';
 import { ApiError } from '../../lib/errors';
 import { authenticateAffiliate } from '../middleware/auth';
 import { trackRateLimiter } from '../middleware/rateLimit';
 import { Metrics } from '../../lib/metrics';
-import { addForwardLeadJob } from '../../jobs/forwardLead';
 import { logger } from '../../lib/logger';
+import { config } from '../../config/config';
 
 const router = Router();
 
@@ -74,17 +72,6 @@ router.post('/', authenticateAffiliate, trackRateLimiter, async (req: Request & 
     const affiliate = req.affiliate;
     const idempotencyKey = req.headers['idempotency-key'] as string;
 
-    // Check for existing idempotency result
-    if (idempotencyKey) {
-      const existingResult = await RedisHelper.getIdempotencyResult(idempotencyKey);
-      if (existingResult) {
-        logger.info('Returning idempotent result', { 
-          idempotencyKey, 
-          affiliateId: affiliate.id 
-        });
-        return res.json(existingResult);
-      }
-    }
 
     const db = getDatabase();
     
@@ -96,60 +83,71 @@ router.post('/', authenticateAffiliate, trackRateLimiter, async (req: Request & 
     const azTxId = `AZ-${shortUuid.generate()}`;
 
     try {
-      await db.$transaction(async (tx) => {
-        // Create traffic log
-        const trafficLog = await tx.trafficLog.create({
-          data: {
-            affiliateId: affiliate.id,
-            offerId: payload.offer_id || null,
-            rawPayload: payload,
-            ip: clientIp,
-            ua: userAgent,
-          },
-        });
+      const { data: trafficLog, error: trafficLogError } = await db
+        .from('traffic_logs')
+        .insert({
+          affiliate_id: affiliate.id,
+          offer_id: payload.offer_id || null,
+          raw_payload: payload,
+          ip: clientIp,
+          ua: userAgent,
+        })
+        .select()
+        .single();
 
-        // Create lead with pending status
-        const lead = await tx.lead.create({
-          data: {
-            trafficLogId: trafficLog.id,
-            azTxId,
-            affiliateId: affiliate.id,
-            offerId: payload.offer_id || null,
-            email: payload.email || null,
-            phone: payload.phone || null,
-            firstName: payload.first_name || null,
-            lastName: payload.last_name || null,
-            country: payload.country || null,
-            status: 'pending',
-          },
-        });
+      if (trafficLogError) {
+        throw new ApiError(500, 'DATABASE_ERROR', 'Failed to create traffic log');
+      }
 
-        // Record metrics
-        Metrics.recordInboundLead(affiliate.id, 'received');
-
-        // Enqueue forward job immediately
-        await addForwardLeadJob(lead.id);
-
-        const result = {
-          ok: true,
+      const { data: lead, error: leadError } = await db
+        .from('leads')
+        .insert({
+          traffic_log_id: trafficLog.id,
           az_tx_id: azTxId,
-          lead_id: lead.id,
-        };
+          affiliate_id: affiliate.id,
+          offer_id: payload.offer_id || null,
+          email: payload.email || null,
+          phone: payload.phone || null,
+          first_name: payload.first_name || null,
+          last_name: payload.last_name || null,
+          country: payload.country || null,
+          status: 'pending',
+        })
+        .select()
+        .single();
 
-        // Store idempotency result if key provided
-        if (idempotencyKey) {
-          await RedisHelper.storeIdempotencyResult(idempotencyKey, result);
-        }
+      if (leadError) {
+        throw new ApiError(500, 'DATABASE_ERROR', 'Failed to create lead');
+      }
 
-        logger.info('Lead tracked successfully', {
-          leadId: lead.id,
-          azTxId,
-          affiliateId: affiliate.id,
-          offerId: payload.offer_id,
-        });
+      Metrics.recordInboundLead(affiliate.id, 'received');
 
-        res.json(result);
+      const edgeFunctionUrl = `${config.supabaseUrl}/functions/v1/forward-lead`;
+      fetch(edgeFunctionUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${config.supabaseServiceKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ leadId: lead.id }),
+      }).catch(error => {
+        logger.error('Failed to trigger edge function', { error, leadId: lead.id });
       });
+
+      const result = {
+        ok: true,
+        az_tx_id: azTxId,
+        lead_id: lead.id,
+      };
+
+      logger.info('Lead tracked successfully', {
+        leadId: lead.id,
+        azTxId,
+        affiliateId: affiliate.id,
+        offerId: payload.offer_id,
+      });
+
+      res.json(result);
     } catch (dbError) {
       logger.error('Database error in track endpoint', { error: dbError, affiliateId: affiliate.id });
       throw new ApiError(500, 'DATABASE_ERROR', 'Failed to process lead');

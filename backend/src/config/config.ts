@@ -9,15 +9,14 @@ export const config = {
   port: parseInt(process.env.PORT || '4000', 10),
   corsOrigins: (process.env.CORS_ORIGINS || 'http://localhost:5173').split(','),
 
-  // Database
-  databaseUrl: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/azleads',
-
-  // Redis
-  redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
+  // Supabase
+  supabaseUrl: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL,
+  supabaseAnonKey: process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY,
+  supabaseServiceKey: process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY,
 
   // JWT
-  jwtAccessSecret: process.env.JWT_ACCESS_SECRET || 'change_me',
-  jwtRefreshSecret: process.env.JWT_REFRESH_SECRET || 'change_me_too',
+  jwtAccessSecret: process.env.JWT_ACCESS_SECRET || 'change_me_replace_in_production',
+  jwtRefreshSecret: process.env.JWT_REFRESH_SECRET || 'change_me_too_replace_in_production',
   jwtAccessTtl: process.env.JWT_ACCESS_TTL || '15m',
   jwtRefreshTtl: process.env.JWT_REFRESH_TTL || '7d',
 
@@ -34,10 +33,14 @@ export const config = {
 } as const;
 
 // Validate required environment variables
-const requiredEnvVars = ['DATABASE_URL', 'JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET'];
+const requiredEnvVars = ['SUPABASE_URL', 'JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET'];
 
 for (const envVar of requiredEnvVars) {
-  if (!process.env[envVar]) {
+  const value = envVar === 'SUPABASE_URL'
+    ? (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL)
+    : process.env[envVar];
+
+  if (!value) {
     throw new Error(`Missing required environment variable: ${envVar}`);
   }
 }
