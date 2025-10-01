@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '../contexts/AuthContext';
-import { Plus, Edit, Copy, Trash2 } from 'lucide-react';
+import { Plus, CreditCard as Edit, Copy, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 interface Affiliate {
