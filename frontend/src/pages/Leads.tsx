@@ -1,12 +1,10 @@
 import { useState, useEffect } from 'react';
 import { api } from '../contexts/AuthContext';
-import { 
-  Search, 
-  Filter, 
-  Download, 
-  RefreshCw, 
-  Eye,
-  Calendar
+import {
+  Search,
+  Download,
+  RefreshCw,
+  Eye
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -113,7 +111,7 @@ export default function Leads() {
 
   const exportCSV = async () => {
     try {
-      const params = new URLSearchParams(filters);
+      const params = new URLSearchParams(filters as any);
       const response = await api.get(`/api/exports/leads.csv?${params}`, {
         responseType: 'blob'
       });

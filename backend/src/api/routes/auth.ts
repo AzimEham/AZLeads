@@ -60,11 +60,13 @@ router.post('/login', async (req: Request, res: Response, next: NextFunction) =>
     }
 
     const db = getDatabase();
-    const user = await db.user.findUnique({
-      where: { email: email.toLowerCase() }
-    });
+    const { data: user, error } = await db
+      .from('users')
+      .select('id, email, password_hash, role')
+      .eq('email', email.toLowerCase())
+      .maybeSingle();
 
-    if (!user || !await bcrypt.compare(password, user.passwordHash)) {
+    if (error || !user || !await bcrypt.compare(password, user.password_hash)) {
       throw new ApiError(401, 'INVALID_CREDENTIALS', 'Invalid email or password');
     }
 
@@ -140,12 +142,13 @@ router.post('/refresh', async (req: Request, res: Response, next: NextFunction) 
     }
 
     const db = getDatabase();
-    const user = await db.user.findUnique({
-      where: { id: decoded.sub },
-      select: { id: true, email: true, role: true }
-    });
+    const { data: user, error } = await db
+      .from('users')
+      .select('id, email, role')
+      .eq('id', decoded.sub)
+      .maybeSingle();
 
-    if (!user) {
+    if (error || !user) {
       throw new ApiError(401, 'USER_NOT_FOUND', 'User not found');
     }
 

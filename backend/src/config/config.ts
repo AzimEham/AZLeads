@@ -23,6 +23,9 @@ export const config = {
   // Security
   hmacAlgo: process.env.HMAC_ALGO || 'sha256',
 
+  // Redis
+  redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
+
   // Application
   appTz: process.env.APP_TZ || 'Asia/Dhaka',
   retentionDays: parseInt(process.env.RETENTION_DAYS || '90', 10),

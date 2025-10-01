@@ -43,9 +43,9 @@ export default function Users() {
     e.preventDefault();
     try {
       if (selectedUser) {
-        const payload = { ...formData };
+        const payload: any = { ...formData };
         if (!payload.password) delete payload.password;
-        
+
         await api.put(`/api/users/${selectedUser.id}`, payload);
         toast.success('User updated successfully');
       } else {

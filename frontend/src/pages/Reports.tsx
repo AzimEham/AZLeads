@@ -299,7 +299,7 @@ export default function Reports() {
                   fill="#8884d8"
                   dataKey="count"
                 >
-                  {reportData.conversionFunnel.map((entry, index) => (
+                  {reportData.conversionFunnel.map((_, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
